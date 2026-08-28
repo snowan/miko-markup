@@ -7,6 +7,15 @@ lets the user apply or discard them.
 MikoMarkup is a small SDK, not another artifact manager. Your product keeps its
 existing viewer, authentication, source files, versions, and save behavior.
 
+## Demo
+
+Select rendered sections, queue anchored comments, send the complete review to
+an agent, preview its edits in place, and apply the accepted update.
+
+[![MikoMarkup demo: select two HTML headings, add anchored comments, preview the agent updates, and apply the result.](https://raw.githubusercontent.com/snowan/miko-markup/main/.github/assets/miko-markup-demo.gif)](https://raw.githubusercontent.com/snowan/miko-markup/main/.github/assets/miko-markup-demo.mp4)
+
+[Open the MP4 demo](https://raw.githubusercontent.com/snowan/miko-markup/main/.github/assets/miko-markup-demo.mp4).
+
 ## What it adds
 
 - Anchored comments on any HTML section.
