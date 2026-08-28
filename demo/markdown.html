@@ -1,0 +1,153 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="icon" href="data:,">
+  <title>MikoMarkup — Review rendered Markdown with an agent</title>
+  <style>
+    :root { color-scheme:light; --ink:#172335; --muted:#667085; --line:#d7d1c4; --paper:#fffdf7; --ground:#eee9dd; --blue:#275ccf; --orange:#df5b35; }
+    * { box-sizing:border-box; }
+    html { scroll-behavior:smooth; }
+    body { margin:0; color:var(--ink); background:var(--ground); font:17px/1.65 ui-sans-serif,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; }
+    button,a { font:inherit; }
+    .demo-bar { position:sticky; top:0; z-index:5; display:flex; justify-content:space-between; gap:20px; align-items:center; padding:12px max(18px,calc((100vw - 980px)/2)); color:white; background:#172335; }
+    .brand { display:flex; align-items:baseline; gap:9px; }
+    .brand strong { font-size:16px; }
+    .brand span { color:#d6deed; font-size:15px; }
+    .actions { display:flex; align-items:center; gap:10px; }
+    .actions a { color:#d6deed; font-size:14px; text-decoration:none; }
+    .actions a:hover { color:white; text-decoration:underline; }
+    .actions button { min-height:40px; padding:7px 14px; border:1px solid #75829a; border-radius:9px; color:white; background:transparent; cursor:pointer; font-weight:750; }
+    .actions button:focus-visible,.actions a:focus-visible { outline:3px solid #8bb3ff; outline-offset:3px; }
+    .shell { width:min(980px,calc(100% - 32px)); margin:36px auto 72px; }
+    .notice { display:grid; grid-template-columns:auto 1fr; gap:14px; align-items:start; margin:0 0 20px; padding:16px 18px; border:1px solid #b8c8ef; border-radius:13px; background:#f4f7ff; }
+    .notice .dot { display:grid; place-items:center; width:30px; height:30px; border-radius:50%; color:white; background:var(--blue); font-weight:900; }
+    .notice strong { display:block; }
+    .notice p { margin:2px 0 0; color:#475467; font-size:15px; }
+    #markdown-artifact { padding:clamp(38px,7vw,78px); border:1px solid var(--line); border-radius:18px; background:var(--paper); box-shadow:0 22px 60px rgba(23,35,53,.12); }
+    #markdown-artifact > * { max-width:68ch; }
+    #markdown-artifact h1,#markdown-artifact h2 { font-family:ui-serif,Georgia,serif; letter-spacing:-.025em; }
+    #markdown-artifact h1 { margin:0 0 24px; font-size:clamp(42px,7vw,68px); line-height:1.04; }
+    #markdown-artifact h2 { margin:52px 0 12px; padding-top:8px; font-size:clamp(28px,3.4vw,40px); line-height:1.18; }
+    #markdown-artifact p { margin:0 0 22px; color:#475467; font-size:18px; }
+    #markdown-artifact blockquote { margin:42px 0 0; padding:18px 22px; border-left:4px solid var(--orange); border-radius:0 12px 12px 0; color:#553b33; background:#fff4ee; }
+    .saved { position:fixed; z-index:3; left:50%; bottom:22px; transform:translateX(-50%); padding:10px 16px; border-radius:999px; color:white; background:#155b40; box-shadow:0 12px 34px rgba(23,35,53,.22); opacity:0; pointer-events:none; transition:opacity .16s ease; }
+    .saved.show { opacity:1; }
+    @media (max-width:620px) { .brand span,.actions a { display:none; } .shell { width:min(100% - 20px,980px); margin-top:18px; } #markdown-artifact { padding:34px 24px 54px; } }
+    @media (prefers-reduced-motion:reduce) { html { scroll-behavior:auto; } .saved { transition:none; } }
+  </style>
+</head>
+<body>
+  <div class="demo-bar">
+    <div class="brand"><strong>MikoMarkup</strong><span>· Markdown artifact</span></div>
+    <div class="actions"><a href="./">HTML demo</a><button id="start-review" type="button">Start review</button></div>
+  </div>
+
+  <main class="shell">
+    <div class="notice">
+      <span class="dot">1</span>
+      <div>
+        <strong>Comment on the rendered document</strong>
+        <p>Select a heading, add “Make this heading shorter,” then send the comment. The preview is rendered from updated Markdown, not patched HTML.</p>
+      </div>
+    </div>
+    <article id="markdown-artifact" aria-label="Rendered Markdown artifact"></article>
+  </main>
+
+  <div id="saved" class="saved" role="status" aria-live="polite"></div>
+
+  <script type="module">
+    import { createMarkdownArtifactReview } from "../src/index.js";
+
+    const initialMarkdown = `# Reviewing Markdown with MikoMarkup
+
+Markdown stays canonical while the reader comments on the rendered document.
+
+## Comment on rendered blocks
+
+Select a heading or paragraph without copying its text into a separate chat.
+
+## Send one source-aware review
+
+Each comment carries a text quote and the line range from the original Markdown file.
+
+## Preview before saving
+
+The agent returns updated Markdown, and the host renders that source before the user applies it.
+
+> Your product still owns authentication, versions, rendering, and persistence.
+`;
+
+    const escapeHtml = (value) => String(value)
+      .replaceAll("&", "&amp;")
+      .replaceAll("<", "&lt;")
+      .replaceAll(">", "&gt;")
+      .replaceAll('"', "&quot;");
+
+    function renderMarkdown(markdown) {
+      const lines = markdown.split(/\r?\n/);
+      return lines.map((line, index) => {
+        const lineNumber = index + 1;
+        const attributes = `data-artifact-section data-artifact-line-start="${lineNumber}" data-artifact-line-end="${lineNumber}"`;
+        if (line.startsWith("# ")) return `<h1 ${attributes} data-artifact-id="title">${escapeHtml(line.slice(2))}</h1>`;
+        if (line.startsWith("## ")) return `<h2 ${attributes}>${escapeHtml(line.slice(3))}</h2>`;
+        if (line.startsWith("> ")) return `<blockquote ${attributes}>${escapeHtml(line.slice(2))}</blockquote>`;
+        if (line.trim()) return `<p ${attributes}>${escapeHtml(line)}</p>`;
+        return "";
+      }).join("");
+    }
+
+    function replacementFor(line, instruction) {
+      const explicit = instruction.match(/(?:change|replace|rename)(?:\s+(?:this|it|the text|the heading|this heading))?\s+to\s+[“\"]?(.+?)[”\"]?\s*$/i);
+      if (explicit) return `${line.startsWith("## ") ? "## " : line.startsWith("# ") ? "# " : ""}${explicit[1].replace(/[”\"]$/, "")}`;
+      const known = new Map([
+        ["# Reviewing Markdown with MikoMarkup", "# Review Markdown with your agent"],
+        ["## Comment on rendered blocks", "## Comment where the source lives"],
+        ["## Send one source-aware review", "## One review, any agent"],
+        ["## Preview before saving", "## Preview the Markdown update"],
+      ]);
+      if (/short|simple|clear|direct/i.test(instruction) && known.has(line)) return known.get(line);
+      return line;
+    }
+
+    async function demoAgent(request) {
+      await new Promise((resolve) => setTimeout(resolve, 650));
+      const lines = request.source.content.split(/\r?\n/);
+      for (const comment of request.feedback) {
+        const range = comment.anchors?.[0]?.sourceRange;
+        const lineIndex = comment.scope === "artifact" ? 0 : (range?.startLine ?? 1) - 1;
+        if (lines[lineIndex] != null) lines[lineIndex] = replacementFor(lines[lineIndex], comment.instruction);
+      }
+      return {
+        summary: `The simulated agent updated Markdown from ${request.review.totalComments} comment${request.review.totalComments === 1 ? "" : "s"}.`,
+        patches: [{ operation: "replaceSource", format: "markdown", value: lines.join("\n") }],
+      };
+    }
+
+    const artifact = document.querySelector("#markdown-artifact");
+    const saved = document.querySelector("#saved");
+    artifact.innerHTML = renderMarkdown(initialMarkdown);
+
+    const review = createMarkdownArtifactReview({
+      root: artifact,
+      artifact: { id: "markdown-demo", path: "demo/guide.md", version: "browser-demo" },
+      markdown: initialMarkdown,
+      render: renderMarkdown,
+      adapter: demoAgent,
+      onApply: async ({ markdown }) => {
+        window.lastAppliedMarkdown = markdown;
+        saved.textContent = "The host received the updated Markdown.";
+        saved.classList.add("show");
+        setTimeout(() => {
+          saved.classList.remove("show");
+          saved.textContent = "";
+        }, 2200);
+      },
+    });
+
+    document.querySelector("#start-review").addEventListener("click", () => review.enable());
+    window.artifactReview = review;
+  </script>
+</body>
+</html>

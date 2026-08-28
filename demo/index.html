@@ -15,6 +15,8 @@
     .demo-bar strong { font-size:16px; }
     .demo-bar span { color:#d6deed; font-size:15px; }
     .demo-bar button { min-height:40px; padding:7px 14px; border:1px solid #75829a; border-radius:9px; color:white; background:transparent; cursor:pointer; font-weight:750; }
+    .demo-bar a { margin-left:auto; color:#d6deed; font-size:14px; text-decoration:none; }
+    .demo-bar a:hover { color:white; text-decoration:underline; }
     .demo-bar button:focus-visible { outline:3px solid #8bb3ff; outline-offset:2px; }
     .shell { width:min(1120px,calc(100% - 32px)); margin:36px auto 72px; }
     .notice { display:grid; grid-template-columns:auto 1fr; gap:14px; align-items:start; margin:0 0 20px; padding:16px 18px; border:1px solid #b8c8ef; border-radius:13px; background:#f4f7ff; }
@@ -56,6 +58,7 @@
 <body>
   <div class="demo-bar">
     <div><strong>MikoMarkup</strong> <span>· standalone demo</span></div>
+    <a href="./markdown.html">Markdown demo</a>
     <button id="start-review" type="button">Start review</button>
   </div>
 
@@ -124,7 +127,7 @@
     </article>
   </main>
 
-  <div id="saved" class="saved" role="status">The host received the updated HTML.</div>
+  <div id="saved" class="saved" role="status" aria-live="polite"></div>
 
   <script type="module">
     import { createArtifactReview, selectorFor } from "../src/index.js";
@@ -187,8 +190,12 @@
       adapter: demoAgent,
       onApply: async ({ html }) => {
         window.lastAppliedArtifact = html;
+        saved.textContent = "The host received the updated HTML.";
         saved.classList.add("show");
-        setTimeout(() => saved.classList.remove("show"), 2200);
+        setTimeout(() => {
+          saved.classList.remove("show");
+          saved.textContent = "";
+        }, 2200);
       },
     });
 

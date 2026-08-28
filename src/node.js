@@ -9,13 +9,26 @@ const agentSchemaUrl = new URL("./agent-output.schema.json", import.meta.url);
 const agentSchemaPath = fileURLToPath(agentSchemaUrl);
 let schemaPromise;
 
-const DEFAULT_PROMPT = [
+const HTML_PROMPT = [
   "Update one rendered HTML artifact from the review request supplied on stdin.",
   "Address every feedback item and keep unrelated content unchanged.",
   "Prefer the selectors supplied in each anchor and use commentId to connect a patch to its comment.",
-  "Set fields that do not apply to an operation to null.",
+  "Use DOM patch operations and set selector, value, name, format, and commentId fields that do not apply to null.",
   "Return only a proposal matching the required JSON schema.",
 ].join(" ");
+
+function defaultPrompt(request) {
+  if (typeof request.source?.format === "string" && typeof request.source?.content === "string") {
+    return [
+      `Update one ${request.source.format} artifact from request.source.content using the review feedback supplied on stdin.`,
+      "Address every feedback item, use sourceRange and textQuote anchors to locate each comment, and keep unrelated source unchanged.",
+      `Return exactly one replaceSource patch with format ${JSON.stringify(request.source.format)} and the complete updated source in value.`,
+      "Set selector, name, and commentId to null.",
+      "Return only a proposal matching the required JSON schema.",
+    ].join(" ");
+  }
+  return HTML_PROMPT;
+}
 
 async function proposalSchema() {
   schemaPromise ??= readFile(agentSchemaUrl, "utf8").then(JSON.parse);
@@ -25,7 +38,11 @@ async function proposalSchema() {
 function validateRequest(request) {
   if (!request || typeof request !== "object") throw new TypeError("The adapter needs a MikoMarkup review request.");
   if (request.protocol !== protocol) throw new Error(`Expected protocol ${protocol}, received ${request.protocol ?? "none"}.`);
-  if (typeof request.source?.html !== "string") throw new Error("The review request has no source HTML.");
+  const hasHtml = typeof request.source?.html === "string";
+  const hasTypedSource = typeof request.source?.format === "string" && typeof request.source?.content === "string";
+  if (!hasHtml && !hasTypedSource) {
+    throw new Error("The review request needs source HTML or a format and content source pair.");
+  }
   if (!Array.isArray(request.feedback)) throw new Error("The review request has no feedback array.");
 }
 
@@ -119,7 +136,7 @@ export function createCodexAdapter(options = {}) {
     ];
     if (options.model) args.push("--model", options.model);
     if (options.skipGitRepoCheck) args.push("--skip-git-repo-check");
-    args.push(options.prompt ?? DEFAULT_PROMPT);
+    args.push(options.prompt ?? defaultPrompt(request));
 
     const result = await runCommand(options.command ?? "codex", args, {
       ...commonOptions(options),
@@ -136,7 +153,7 @@ export function createClaudeCodeAdapter(options = {}) {
     const schema = await proposalSchema();
     const args = [
       "--print",
-      options.prompt ?? DEFAULT_PROMPT,
+      options.prompt ?? defaultPrompt(request),
       "--output-format",
       "json",
       "--json-schema",

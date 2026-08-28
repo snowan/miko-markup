@@ -13,7 +13,12 @@ Object.assign(globalThis, {
   HTMLTextAreaElement: window.HTMLTextAreaElement,
 });
 
-const { createArtifactReview, previewProposal } = await import("../src/index.js");
+const {
+  createArtifactReview,
+  createMarkdownArtifactReview,
+  previewProposal,
+  previewSourceProposal,
+} = await import("../src/index.js");
 
 test("HTML previews sanitize executable content and roll back once", () => {
   const root = document.createElement("main");
@@ -36,6 +41,25 @@ test("HTML previews sanitize executable content and roll back once", () => {
   preview.rollback();
   preview.rollback();
   assert.equal(root.querySelector("#target").innerHTML, "<p>Before</p>");
+  root.remove();
+});
+
+test("source preview rollback restores clean rendered markup", async () => {
+  const root = document.createElement("main");
+  root.innerHTML = '<h1 tabindex="0" data-iar-keyboard data-iar-tabindex>Before</h1>';
+  document.body.append(root);
+
+  const preview = await previewSourceProposal(root, {
+    summary: "Replace the source",
+    patches: [{ operation: "replaceSource", format: "markdown", value: "# After\n" }],
+  }, {
+    format: "markdown",
+    render: () => '<h1 data-artifact-line-start="1">After</h1>',
+  });
+
+  assert.equal(root.querySelector("h1").textContent, "After");
+  preview.rollback();
+  assert.equal(root.innerHTML, "<h1>Before</h1>");
   root.remove();
 });
 
@@ -90,8 +114,73 @@ test("review UI batches keyboard-selected and whole-page comments before apply",
 
   assert.match(applied.html, /Short title/);
   assert.doesNotMatch(applied.html, /data-iar-|tabindex="0"/);
+  assert.equal(applied.source, undefined);
   review.destroy();
   assert.equal(title.hasAttribute("tabindex"), false);
   assert.equal(document.querySelector("[data-miko-markup]"), null);
+  root.remove();
+});
+
+test("Markdown review sends source lines, previews replacement source, and applies Markdown", async () => {
+  const initialMarkdown = "# A very long guide title\n\nStart with the important idea.\n";
+  const render = (markdown) => {
+    const lines = markdown.split(/\r?\n/);
+    return [
+      `<h1 data-artifact-id="title" data-artifact-line-start="1" data-artifact-line-end="1">${lines[0].replace(/^#\s+/, "")}</h1>`,
+      `<p data-artifact-line-start="3" data-artifact-line-end="3">${lines[2]}</p>`,
+    ].join("");
+  };
+  const root = document.createElement("main");
+  root.innerHTML = render(initialMarkdown);
+  document.body.append(root);
+  let receivedRequest;
+  let applied;
+
+  const review = createMarkdownArtifactReview({
+    root,
+    artifact: { id: "guide", path: "guide.md", version: "v1" },
+    markdown: initialMarkdown,
+    render,
+    adapter: async (request) => {
+      receivedRequest = request;
+      return {
+        summary: "Shortened the guide title",
+        patches: [{
+          operation: "replaceSource",
+          format: "markdown",
+          value: "# Clear guide\n\nStart with the important idea.\n",
+        }],
+      };
+    },
+    onApply: async (payload) => { applied = payload; },
+  });
+
+  review.enable();
+  root.querySelector("h1").dispatchEvent(new window.Event("click", { bubbles: true }));
+  const panel = document.querySelector("[data-miko-markup]").shadowRoot;
+  assert.equal(panel.querySelector('[data-action="edit"]'), null);
+  panel.querySelector("textarea").value = "Make this title shorter";
+  panel.querySelector("textarea").dispatchEvent(new window.Event("input", { bubbles: true }));
+  panel.querySelector('[data-action="add-comment"]').click();
+  panel.querySelector('[data-action="whole-page"]').click();
+  panel.querySelector("textarea").value = "Make the whole guide warmer";
+  panel.querySelector("textarea").dispatchEvent(new window.Event("input", { bubbles: true }));
+  panel.querySelector('[data-action="add-comment"]').click();
+  panel.querySelector('[data-action="send"]').click();
+  await window.happyDOM.whenAsyncComplete();
+
+  assert.deepEqual(receivedRequest.source, { format: "markdown", content: initialMarkdown });
+  assert.equal(receivedRequest.review.totalComments, 2);
+  assert.equal(receivedRequest.review.wholePageComments, 1);
+  assert.deepEqual(receivedRequest.feedback[0].anchors[0].sourceRange, { startLine: 1, endLine: 1 });
+  assert.deepEqual(receivedRequest.feedback[1].anchors[0].sourceRange, { startLine: 1, endLine: 4 });
+  assert.equal(root.querySelector("h1").textContent, "Clear guide");
+  panel.querySelector('[data-action="apply"]').click();
+  await window.happyDOM.whenAsyncComplete();
+
+  assert.equal(applied.markdown, "# Clear guide\n\nStart with the important idea.\n");
+  assert.deepEqual(applied.source, { format: "markdown", content: applied.markdown });
+  assert.equal(review.getMarkdown(), applied.markdown);
+  review.destroy();
   root.remove();
 });

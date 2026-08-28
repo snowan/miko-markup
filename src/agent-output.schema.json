@@ -15,15 +15,16 @@
       "items": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["selector", "operation", "value", "name", "commentId"],
+        "required": ["selector", "operation", "value", "name", "format", "commentId"],
         "properties": {
-          "selector": { "type": "string" },
+          "selector": { "type": ["string", "null"] },
           "operation": {
             "type": "string",
-            "enum": ["setText", "setHTML", "setAttribute", "removeAttribute"]
+            "enum": ["setText", "setHTML", "setAttribute", "removeAttribute", "replaceSource"]
           },
           "value": { "type": ["string", "null"] },
           "name": { "type": ["string", "null"] },
+          "format": { "type": ["string", "null"] },
           "commentId": { "type": ["string", "null"] }
         }
       }

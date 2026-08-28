@@ -33,6 +33,22 @@ const request = createReviewRequest({
   }],
 });
 
+const markdownRequest = createReviewRequest({
+  artifact: { id: "guide", path: "guide.md" },
+  source: { format: "markdown", content: "# Long guide title\n" },
+  comments: [{
+    id: "c1",
+    scope: "element",
+    instruction: "Shorten the title",
+    anchors: [{
+      selector: "h1",
+      tag: "h1",
+      textQuote: { exact: "Long guide title", prefix: "", suffix: "" },
+      sourceRange: { startLine: 1, endLine: 1 },
+    }],
+  }],
+});
+
 test("Codex adapter normalizes schema-constrained CLI output", async () => {
   const command = await fakeCommand({
     summary: "Updated the title",
@@ -55,6 +71,21 @@ test("Claude Code adapter reads structured output from the CLI envelope", async 
 
   const proposal = await adapter(request);
   assert.equal(proposal.patches[0].value, "Hello there");
+});
+
+test("Codex adapter accepts Markdown source replacement proposals", async () => {
+  const command = await fakeCommand({
+    summary: "Shortened the guide title",
+    patches: [{ operation: "replaceSource", format: "markdown", value: "# Clear guide\n" }],
+  });
+  const adapter = createCodexAdapter({ command, skipGitRepoCheck: true });
+
+  const proposal = await adapter(markdownRequest);
+  assert.deepEqual(proposal.patches[0], {
+    operation: "replaceSource",
+    format: "markdown",
+    value: "# Clear guide\n",
+  });
 });
 
 test("agent adapters reject another protocol before starting a process", async () => {

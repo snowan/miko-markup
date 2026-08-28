@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+### Features
+
+- Add source-line comments and full-source agent previews for rendered Markdown.
+- Add `createMarkdownArtifactReview` and `previewSourceProposal` browser APIs.
+- Teach the Codex and Claude Code adapters to return `replaceSource` proposals.
+
 ## 0.1.0 - 2026-08-28
 
 ### Features

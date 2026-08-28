@@ -66,6 +66,36 @@ browser package.
 repository-backed host. The host decides what the token means and rejects a
 request when canonical source has changed since the review began.
 
+HTML requests preserve the original `{ "html": "…" }` source shape. A
+source-backed Markdown request uses:
+
+```json
+{
+  "source": {
+    "format": "markdown",
+    "content": "# Guide\n\nStart here.\n"
+  },
+  "feedback": [
+    {
+      "id": "comment_1",
+      "scope": "element",
+      "instruction": "Make this introduction clearer",
+      "anchors": [
+        {
+          "selector": "p:nth-of-type(1)",
+          "tag": "p",
+          "sourceRange": { "startLine": 3, "endLine": 3 },
+          "textQuote": { "exact": "Start here.", "prefix": "", "suffix": "" }
+        }
+      ]
+    }
+  ]
+}
+```
+
+Source lines are one-based and inclusive. The text quote and DOM selector stay
+in the anchor so an adapter can detect stale or incorrect source mappings.
+
 An element comment has `scope: "element"`. A whole-page comment has
 `scope: "artifact"` and uses `:scope` as its anchor selector. Every comment is
 included in one request, and the `review` summary lets an agent verify the
@@ -95,6 +125,22 @@ Supported operations:
 | `setHTML` | `selector`, `value` | Replaces sanitized `innerHTML` |
 | `setAttribute` | `selector`, `name`, `value` | Sets an allowed attribute |
 | `removeAttribute` | `selector`, `name` | Removes an allowed attribute |
+| `replaceSource` | `format`, `value` | Replaces a complete source artifact through a host renderer |
+
+Markdown agents return one source patch:
+
+```json
+{
+  "summary": "Clarified the guide introduction.",
+  "patches": [
+    {
+      "operation": "replaceSource",
+      "format": "markdown",
+      "value": "# Guide\n\nBegin with the core idea.\n"
+    }
+  ]
+}
+```
 
 Allowed attributes are `class`, `title`, `alt`, `aria-*`, and non-internal
 `data-*`. `data-iar-*` belongs to the SDK and is rejected.
@@ -111,6 +157,8 @@ are `null` in that raw model response and are removed during normalization.
 - An empty proposal is rejected.
 - An unsupported operation or attribute is rejected before preview.
 - An invalid or unmatched selector fails the whole preview.
+- A source preview rejects mixed DOM and `replaceSource` patches.
+- A source patch whose format differs from the current artifact is rejected.
 - If any patch fails, already-applied patches are rolled back.
 - A preview can be committed or rolled back once; repeated settlement calls do
   nothing.

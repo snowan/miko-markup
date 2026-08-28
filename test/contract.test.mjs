@@ -37,6 +37,27 @@ test("review requests keep the harness-neutral protocol and anchored feedback", 
   });
 });
 
+test("Markdown review requests preserve source and line anchors", () => {
+  const request = createReviewRequest({
+    artifact: { id: "guide", path: "guide.md", version: "sha256:md" },
+    source: { format: "markdown", content: "# Guide\n\nStart here.\n" },
+    comments: [{
+      id: "c1",
+      scope: "element",
+      instruction: "Make this introduction clearer",
+      anchors: [{
+        selector: "p:nth-of-type(1)",
+        tag: "p",
+        textQuote: { exact: "Start here.", prefix: "", suffix: "" },
+        sourceRange: { startLine: 3, endLine: 3 },
+      }],
+    }],
+  });
+
+  assert.deepEqual(request.source, { format: "markdown", content: "# Guide\n\nStart here.\n" });
+  assert.deepEqual(request.feedback[0].anchors[0].sourceRange, { startLine: 3, endLine: 3 });
+});
+
 test("proposal aliases normalize into the small patch contract", () => {
   const proposal = normalizeProposal({
     summary: "Shorten the title",
@@ -49,10 +70,22 @@ test("proposal aliases normalize into the small patch contract", () => {
   });
 });
 
+test("source proposals normalize complete Markdown replacements", () => {
+  const proposal = normalizeProposal({
+    summary: "Clarified the guide",
+    patches: [{ operation: "replace-source", format: "markdown", content: "# Clear guide\n" }],
+  });
+
+  assert.deepEqual(proposal, {
+    summary: "Clarified the guide",
+    patches: [{ operation: "replaceSource", format: "markdown", value: "# Clear guide\n" }],
+  });
+});
+
 test("unsupported patch operations fail with an actionable error", () => {
   assert.throws(
     () => normalizeProposal({ patches: [{ selector: "h1", operation: "executeScript", value: "alert(1)" }] }),
-    /Use setText, setHTML, setAttribute, or removeAttribute/,
+    /Use setText, setHTML, setAttribute, removeAttribute, or replaceSource/,
   );
 });
 

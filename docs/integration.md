@@ -11,6 +11,51 @@ Mount the SDK around the element that already renders the artifact. Provide an
 adapter and let `onApply` call the host's existing save endpoint. This is the
 smallest integration and needs no changes to the rest of the product shell.
 
+## Rendered Markdown
+
+Keep Markdown as the canonical source and render it with the parser already
+used by the host product. MikoMarkup comments on the rendered DOM but sends the
+original Markdown to the agent.
+
+Mark each selectable rendered block with its one-based, inclusive source lines:
+
+```html
+<h2
+  data-artifact-section
+  data-artifact-line-start="8"
+  data-artifact-line-end="8"
+>Installation</h2>
+```
+
+Most Markdown syntax trees expose source positions. Add the attributes while
+rendering those nodes, then mount the convenience wrapper:
+
+```js
+import {
+  createFetchAdapter,
+  createMarkdownArtifactReview,
+} from "miko-markup";
+
+const review = createMarkdownArtifactReview({
+  root: "#preview",
+  artifact: { id: "guide", path: "docs/guide.md", version: sourceHash },
+  markdown,
+  render: renderMarkdown,
+  adapter: createFetchAdapter({ endpoint: "/api/artifacts/review" }),
+  onApply: ({ markdown: updatedMarkdown }) => saveMarkdown(updatedMarkdown),
+});
+```
+
+The request includes `{ format: "markdown", content }` and each anchored
+comment includes its `sourceRange`. The agent returns one `replaceSource`
+patch containing the complete updated Markdown. MikoMarkup calls `render`,
+sanitizes its HTML output, and shows that result before apply.
+
+Direct DOM editing is hidden for source-backed Markdown because changing the
+rendered HTML would not update the `.md` file. Hosts that need interactive
+Markdown components can provide the lower-level `source` and `preview` options
+to `createArtifactReview` instead of the convenience wrapper.
+
 ## Cross-origin iframe
 
 The parent page cannot inspect a cross-origin iframe's DOM. Choose one of these
@@ -49,7 +94,8 @@ authentication.
 ## Persistence
 
 `onApply` receives the complete rendered HTML, inner HTML, proposal, comments,
-and direct edits. Before saving:
+and direct edits. Source-backed reviews also include `source`; the Markdown
+wrapper adds `markdown` for direct persistence. Before saving:
 
 1. Compare `artifact.version` with canonical source.
 2. Reject stale reviews instead of overwriting newer work.

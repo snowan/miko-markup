@@ -1,7 +1,7 @@
 {
   "name": "miko-markup",
   "version": "0.1.0",
-  "description": "Inline HTML comments and agent-powered update previews for any artifact viewer.",
+  "description": "Inline comments and agent-powered updates for HTML and rendered Markdown artifacts.",
   "license": "MIT",
   "author": "snowan",
   "type": "module",
@@ -45,6 +45,7 @@
     "codex",
     "html",
     "inline-editing",
+    "markdown",
     "review"
   ],
   "repository": {
