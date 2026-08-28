@@ -59,6 +59,17 @@
               "name": { "type": "string", "minLength": 1 },
               "commentId": { "type": "string" }
             }
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["operation", "format", "value"],
+            "properties": {
+              "operation": { "const": "replaceSource" },
+              "format": { "type": "string", "minLength": 1 },
+              "value": { "type": "string" },
+              "commentId": { "type": "string" }
+            }
           }
         ]
       }

@@ -1,8 +1,8 @@
 # MikoMarkup
 
-Select rendered HTML, leave comments where the changes belong, and send the
-whole review to an agent. MikoMarkup previews the proposed updates in place and
-lets the user apply or discard them.
+Select rendered HTML or Markdown, leave comments where the changes belong, and
+send the whole review to an agent. MikoMarkup previews the proposed updates in
+place and lets the user apply or discard them.
 
 MikoMarkup is a small SDK, not another artifact manager. Your product keeps its
 existing viewer, authentication, source files, versions, and save behavior.
@@ -18,9 +18,10 @@ an agent, preview its edits in place, and apply the accepted update.
 
 ## What it adds
 
-- Anchored comments on any HTML section.
+- Anchored comments on HTML sections and rendered Markdown blocks.
 - As many section comments as the user needs, plus whole-page feedback.
-- Direct inline text editing.
+- Source-line anchors and full-source previews for Markdown.
+- Direct inline text editing for HTML.
 - One harness-neutral JSON request containing the complete review.
 - In-place preview with apply and discard controls.
 - Server-side adapters for Codex and Claude Code.
@@ -32,7 +33,8 @@ npm install
 npm run demo
 ```
 
-Then open <http://127.0.0.1:3000/demo/>.
+Then open the [HTML demo](http://127.0.0.1:3000/demo/) or the
+[Markdown demo](http://127.0.0.1:3000/demo/markdown.html).
 
 ## Install
 
@@ -71,6 +73,33 @@ Add `data-artifact-id` to important sections when you control the markup. It
 creates a stable anchor and makes those sections keyboard-selectable while
 review mode is active. Otherwise, MikoMarkup falls back to an element ID or a
 root-relative CSS path and includes a text quote for reanchoring.
+
+## Review rendered Markdown
+
+Keep the `.md` text as canonical source and use the renderer your product
+already has. Add one-based source lines to rendered blocks, then mount the
+Markdown wrapper:
+
+```js
+import {
+  createFetchAdapter,
+  createMarkdownArtifactReview,
+} from "miko-markup";
+
+createMarkdownArtifactReview({
+  root: "#preview",
+  artifact: { id: "guide", path: "docs/guide.md", version: "sha256:…" },
+  markdown,
+  render: renderMarkdown,
+  adapter: createFetchAdapter({ endpoint: "/api/artifacts/review" }),
+  onApply: ({ markdown }) => saveMarkdown(markdown),
+}).enable();
+```
+
+The renderer marks each selectable block with `data-artifact-line-start` and
+`data-artifact-line-end`. See the
+[Markdown integration guide](docs/integration.md#rendered-markdown) for the
+mapping contract.
 
 ## Connect an agent
 
@@ -111,17 +140,17 @@ const reviewArtifact = createClaudeCodeAdapter({
 });
 ```
 
-Both built-in adapters run without a shell, send the rendered HTML through
-stdin, disable repository writes, request schema-constrained output, and apply
-the same timeout and output limits. The corresponding CLI must already be
-installed and authenticated on the server.
+Both built-in adapters run without a shell, send the HTML or typed source
+through stdin, disable repository writes, request schema-constrained output,
+and apply the same timeout and output limits. The corresponding CLI must
+already be installed and authenticated on the server.
 
 For a hosted model, Miko, or another harness, pass any async function:
 
 ```js
 const adapter = async (reviewRequest) => {
   const result = await myHarness.run({
-    task: "Update this HTML from the attached anchored feedback",
+    task: "Update this artifact from the attached anchored feedback",
     input: reviewRequest,
   });
   return result.proposal;
@@ -142,6 +171,8 @@ versioning, and persistence guidance. The stable wire format lives in
   writes before changing canonical source.
 - Built-in `setHTML` previews remove executable elements, event handlers,
   inline styles, unsafe URL protocols, forms, frames, and embedded objects.
+- Markdown `replaceSource` proposals are rendered and sanitized before preview;
+  the host still saves the accepted Markdown through `onApply`.
 - Use a sandboxed iframe and a host-provided `preview()` callback for executable
   artifacts or framework source patches.
 

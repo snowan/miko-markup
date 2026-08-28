@@ -1,10 +1,13 @@
 import {
   createArtifactReview,
   createFetchAdapter,
+  createMarkdownArtifactReview,
   createReviewRequest,
   normalizeProposal,
   previewProposal,
+  previewSourceProposal,
   type ArtifactProposal,
+  type ArtifactSource,
   type ReviewRequest,
 } from "../src/index.js";
 import { createClaudeCodeAdapter, createCodexAdapter } from "../src/node.js";
@@ -25,6 +28,16 @@ const proposal: ArtifactProposal = normalizeProposal({
 const preview = previewProposal(root, proposal);
 preview.rollback();
 
+const markdownSource: ArtifactSource = { format: "markdown", content: "# Hello\n" };
+const markdownRequest: ReviewRequest = createReviewRequest({ source: markdownSource });
+const markdownProposal: ArtifactProposal = normalizeProposal({
+  patches: [{ operation: "replaceSource", format: "markdown", value: "# Hi\n" }],
+});
+void previewSourceProposal(root, markdownProposal, {
+  format: "markdown",
+  render: (content) => `<h1>${content}</h1>`,
+});
+
 createArtifactReview({
   root,
   artifact: { id: "type-test" },
@@ -32,5 +45,14 @@ createArtifactReview({
   onApply: async ({ html }) => { void html; },
 });
 
+createMarkdownArtifactReview({
+  root,
+  markdown: markdownSource.content,
+  render: (content) => `<h1>${content}</h1>`,
+  adapter: async () => markdownProposal,
+  onApply: async ({ markdown, source }) => { void markdown; void source; },
+});
+
 void createCodexAdapter({ cwd: "/tmp/project" })(request);
 void createClaudeCodeAdapter({ maxBudgetUsd: 1 })(request);
+void createCodexAdapter({ cwd: "/tmp/project" })(markdownRequest);

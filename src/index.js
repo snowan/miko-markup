@@ -10,6 +10,7 @@ const INTERNAL_ATTRIBUTES = [
 const SELECTABLE = [
   "[data-artifact-section]",
   "[data-artifact-id]",
+  "[data-artifact-line-start]",
   "section",
   "article",
   "header",
@@ -54,6 +55,35 @@ function cssEscape(value) {
 
 function normalizeText(value = "") {
   return String(value).replace(/\s+/g, " ").trim();
+}
+
+function normalizeSource(source, html = "") {
+  if (source == null) return { html: String(html ?? "") };
+  if (!source || typeof source !== "object" || Array.isArray(source)) {
+    throw new TypeError("Artifact source must be an object with format and content strings.");
+  }
+  if (typeof source.format !== "string" || !source.format.trim()) {
+    throw new TypeError("Artifact source needs a non-empty format string.");
+  }
+  if (typeof source.content !== "string") {
+    throw new TypeError("Artifact source needs a content string.");
+  }
+  return { format: source.format.trim(), content: source.content };
+}
+
+function sourceRangeFor(element, root, source) {
+  const carrier = element.closest?.("[data-artifact-line-start]");
+  if (carrier && (carrier === root || root.contains(carrier))) {
+    const startLine = Number.parseInt(carrier.getAttribute("data-artifact-line-start"), 10);
+    const endLine = Number.parseInt(carrier.getAttribute("data-artifact-line-end") ?? String(startLine), 10);
+    if (Number.isInteger(startLine) && startLine > 0 && Number.isInteger(endLine) && endLine >= startLine) {
+      return { startLine, endLine };
+    }
+  }
+  if (element === root && source?.format === "markdown") {
+    return { startLine: 1, endLine: Math.max(1, source.content.split(/\r?\n/).length) };
+  }
+  return null;
 }
 
 function resolveRoot(root) {
@@ -110,10 +140,11 @@ export function selectorFor(element, root) {
   return `:scope > ${segments.join(" > ")}`;
 }
 
-function anchorFor(element, root) {
+function anchorFor(element, root, source) {
   const exact = normalizeText(element.textContent).slice(0, 320);
   const parentText = normalizeText(element.parentElement?.textContent);
   const offset = exact ? parentText.indexOf(exact) : -1;
+  const sourceRange = sourceRangeFor(element, root, source);
   return {
     selector: selectorFor(element, root),
     tag: element.tagName.toLowerCase(),
@@ -122,6 +153,7 @@ function anchorFor(element, root) {
       prefix: offset > 0 ? parentText.slice(Math.max(0, offset - 48), offset) : "",
       suffix: offset >= 0 ? parentText.slice(offset + exact.length, offset + exact.length + 48) : "",
     },
+    ...(sourceRange ? { sourceRange } : {}),
   };
 }
 
@@ -144,7 +176,7 @@ function serializeInnerRoot(root) {
 }
 
 /** Create the portable request passed to every agent adapter. */
-export function createReviewRequest({ artifact = {}, html = "", comments = [], directEdits = [] } = {}) {
+export function createReviewRequest({ artifact = {}, html = "", source, comments = [], directEdits = [] } = {}) {
   const wholePageComments = comments.filter((comment) => comment.scope === "artifact").length;
   return {
     protocol: PROTOCOL,
@@ -154,7 +186,7 @@ export function createReviewRequest({ artifact = {}, html = "", comments = [], d
       ...(artifact.path ? { path: artifact.path } : {}),
       ...(artifact.version ? { version: artifact.version } : {}),
     },
-    source: { html },
+    source: normalizeSource(source, html),
     review: {
       totalComments: comments.length,
       anchoredComments: comments.length - wholePageComments,
@@ -190,6 +222,10 @@ const OPERATION_ALIASES = new Map([
   ["set-attribute", "setAttribute"],
   ["removeAttribute", "removeAttribute"],
   ["remove-attribute", "removeAttribute"],
+  ["replaceSource", "replaceSource"],
+  ["replace-source", "replaceSource"],
+  ["replaceDocument", "replaceSource"],
+  ["replace-document", "replaceSource"],
 ]);
 
 /** Validate and normalize the deliberately small v1 patch contract. */
@@ -208,12 +244,27 @@ export function normalizeProposal(input) {
     }
     const operation = OPERATION_ALIASES.get(patch.operation ?? patch.op);
     if (!operation) {
-      throw new Error(`Patch ${index + 1} uses an unsupported operation. Use setText, setHTML, setAttribute, or removeAttribute.`);
+      throw new Error(`Patch ${index + 1} uses an unsupported operation. Use setText, setHTML, setAttribute, removeAttribute, or replaceSource.`);
+    }
+    const value = patch.value ?? patch.text ?? patch.html ?? patch.content ?? patch.markdown;
+    if (operation === "replaceSource") {
+      if (typeof patch.format !== "string" || !patch.format.trim()) {
+        throw new Error(`Patch ${index + 1} needs a source format.`);
+      }
+      if (typeof value !== "string") {
+        throw new Error(`Patch ${index + 1} needs a source content string.`);
+      }
+      return {
+        operation,
+        format: patch.format.trim(),
+        value,
+        ...(patch.commentId ? { commentId: patch.commentId } : {}),
+      };
     }
     if (typeof patch.selector !== "string" || !patch.selector.trim()) {
       throw new Error(`Patch ${index + 1} has no selector.`);
     }
-    if ((operation === "setText" || operation === "setHTML") && typeof (patch.value ?? patch.text ?? patch.html) !== "string") {
+    if ((operation === "setText" || operation === "setHTML") && typeof value !== "string") {
       throw new Error(`Patch ${index + 1} needs a string value.`);
     }
     if ((operation === "setAttribute" || operation === "removeAttribute") && typeof patch.name !== "string") {
@@ -226,8 +277,8 @@ export function normalizeProposal(input) {
     return {
       selector: patch.selector.trim(),
       operation,
-      ...(operation === "setText" ? { value: patch.value ?? patch.text } : {}),
-      ...(operation === "setHTML" ? { value: patch.value ?? patch.html } : {}),
+      ...(operation === "setText" ? { value } : {}),
+      ...(operation === "setHTML" ? { value } : {}),
       ...(operation === "setAttribute" ? { name: patch.name, value: String(patch.value ?? "") } : {}),
       ...(operation === "removeAttribute" ? { name: patch.name } : {}),
       ...(patch.commentId ? { commentId: patch.commentId } : {}),
@@ -302,6 +353,9 @@ function targetFor(root, selector) {
 export function previewProposal(root, input) {
   if (!(root instanceof Element)) throw new TypeError("previewProposal needs an artifact root Element.");
   const proposal = normalizeProposal(input);
+  if (proposal.patches.some((patch) => patch.operation === "replaceSource")) {
+    throw new Error("replaceSource patches need previewSourceProposal() or createMarkdownArtifactReview().");
+  }
   const reversals = [];
   const touched = new Set();
   try {
@@ -355,6 +409,46 @@ export function previewProposal(root, input) {
       if (settled) return;
       settled = true;
       touched.forEach((element) => element.removeAttribute("data-iar-preview"));
+    },
+  };
+}
+
+/** Render and preview one complete source replacement without persisting it. */
+export async function previewSourceProposal(root, input, { format, render } = {}) {
+  if (!(root instanceof Element)) throw new TypeError("previewSourceProposal needs an artifact root Element.");
+  if (typeof render !== "function") throw new TypeError("previewSourceProposal needs a render(content) function.");
+  const proposal = normalizeProposal(input);
+  const replacements = proposal.patches.filter((patch) => patch.operation === "replaceSource");
+  if (replacements.length !== 1 || proposal.patches.length !== 1) {
+    throw new Error("A source preview needs exactly one replaceSource patch and no DOM patches.");
+  }
+  const patch = replacements[0];
+  if (format && patch.format !== format) {
+    throw new Error(`The agent returned ${patch.format} source for a ${format} artifact.`);
+  }
+
+  const rendered = await render(patch.value, { format: patch.format, proposal });
+  if (typeof rendered !== "string") {
+    throw new TypeError("The source renderer must return an HTML string.");
+  }
+
+  const before = serializeInnerRoot(root);
+  root.innerHTML = sanitizeFragment(rendered);
+  root.setAttribute("data-iar-preview", "");
+  let settled = false;
+  return {
+    touched: new Set([root]),
+    source: { format: patch.format, content: patch.value },
+    rollback() {
+      if (settled) return;
+      settled = true;
+      root.innerHTML = before;
+      root.removeAttribute("data-iar-preview");
+    },
+    commit() {
+      if (settled) return;
+      settled = true;
+      root.removeAttribute("data-iar-preview");
     },
   };
 }
@@ -438,6 +532,11 @@ function commentLocation(comment) {
   if (!anchor) return "Selected section";
   const exact = normalizeText(anchor.textQuote?.exact);
   const quote = exact.slice(0, 52);
+  if (anchor.sourceRange) {
+    const { startLine, endLine } = anchor.sourceRange;
+    const lines = startLine === endLine ? `Line ${startLine}` : `Lines ${startLine}–${endLine}`;
+    return `${lines}${quote ? ` · ${quote}${exact.length > 52 ? "…" : ""}` : ""}`;
+  }
   return `${anchor.tag}${quote ? ` · ${quote}${exact.length > 52 ? "…" : ""}` : ""}`;
 }
 
@@ -454,9 +553,11 @@ function selectedSummary(state) {
   return `<span class="selection-copy"><strong>${escapeHtml(element.tagName.toLowerCase())}</strong>${text ? ` · ${escapeHtml(text)}${exact.length > 58 ? "…" : ""}` : ""}</span><button class="context-action" data-action="whole-page">Comment on whole page</button>`;
 }
 
-/** Mount a zero-dependency inline review layer over an existing HTML element. */
+/** Mount a zero-dependency inline review layer over an existing rendered artifact. */
 export function createArtifactReview(options = {}) {
   const root = resolveRoot(options.root);
+  const allowInlineEdit = options.allowInlineEdit ?? options.source == null;
+  if (options.source != null && typeof options.source !== "function") normalizeSource(options.source);
   const instanceId = `iar-${++instanceCount}`;
   const style = installPageStyles(`${instanceId}-style`);
   const host = document.createElement("div");
@@ -478,8 +579,14 @@ export function createArtifactReview(options = {}) {
     error: "",
     proposal: null,
     preview: null,
+    request: null,
     editing: null,
   };
+
+  function currentSource() {
+    const source = typeof options.source === "function" ? options.source() : options.source;
+    return source == null ? null : normalizeSource(source);
+  }
 
   const emit = (type, detail = {}) => {
     options.onEvent?.({ type, ...detail });
@@ -492,7 +599,7 @@ export function createArtifactReview(options = {}) {
   }
 
   function enableKeyboardSelection() {
-    root.querySelectorAll("[data-artifact-section], [data-artifact-id]").forEach((element) => {
+    root.querySelectorAll("[data-artifact-section], [data-artifact-id], [data-artifact-line-start]").forEach((element) => {
       if (keyboardTargets.has(element)) return;
       keyboardTargets.add(element);
       element.setAttribute("data-iar-keyboard", "");
@@ -512,6 +619,12 @@ export function createArtifactReview(options = {}) {
       }
     });
     keyboardTargets.clear();
+  }
+
+  function refreshKeyboardSelection() {
+    if (!state.enabled) return;
+    disableKeyboardSelection();
+    enableKeyboardSelection();
   }
 
   function clearSelection({ shouldRender = true } = {}) {
@@ -549,7 +662,7 @@ export function createArtifactReview(options = {}) {
     element.setAttribute("data-iar-selected", "");
     state.open = true;
     state.error = "";
-    emit("select", { target: "element", anchors: [anchorFor(element, root)] });
+    emit("select", { target: "element", anchors: [anchorFor(element, root, currentSource())] });
     render();
   }
 
@@ -612,11 +725,12 @@ export function createArtifactReview(options = {}) {
     }
 
     const isWholePage = state.commentTarget === "artifact";
+    const source = currentSource();
     const comment = {
       id: uid("comment"),
       scope: isWholePage ? "artifact" : "element",
       instruction,
-      anchors: isWholePage ? [anchorFor(root, root)] : [anchorFor(state.selected[0], root)],
+      anchors: isWholePage ? [anchorFor(root, root, source)] : [anchorFor(state.selected[0], root, source)],
     };
     state.comments.push(comment);
     state.draft = "";
@@ -629,6 +743,11 @@ export function createArtifactReview(options = {}) {
   }
 
   function startInlineEdit() {
+    if (!allowInlineEdit) {
+      state.error = "Inline DOM editing is unavailable for this source-backed artifact. Add a comment and let the agent update its source.";
+      render();
+      return;
+    }
     if (state.selected.length !== 1 || state.commentTarget === "artifact") {
       state.error = "Choose one element before editing its text.";
       render();
@@ -686,9 +805,10 @@ export function createArtifactReview(options = {}) {
   }
 
   function buildRequest() {
+    const source = currentSource();
     return createReviewRequest({
       artifact: options.artifact,
-      html: serializeRoot(root),
+      ...(source ? { source } : { html: serializeRoot(root) }),
       comments: state.comments,
       directEdits: state.directEdits,
     });
@@ -714,6 +834,7 @@ export function createArtifactReview(options = {}) {
     render();
 
     const request = buildRequest();
+    state.request = request;
     emit("send", { request });
     try {
       const proposal = normalizeProposal(await options.adapter(request));
@@ -723,10 +844,12 @@ export function createArtifactReview(options = {}) {
       state.proposal = proposal;
       state.preview = preview ?? { commit() {}, rollback() {} };
       state.status = "";
+      refreshKeyboardSelection();
       emit("preview", { request, proposal });
     } catch (error) {
       state.error = error instanceof Error ? error.message : String(error);
       state.status = "";
+      state.request = null;
       emit("error", { error });
     } finally {
       state.busy = false;
@@ -740,11 +863,13 @@ export function createArtifactReview(options = {}) {
     state.error = "";
     render();
     try {
+      const appliedSource = state.preview.source;
       const payload = {
         artifact: options.artifact ?? { id: "artifact" },
         html: serializeRoot(root),
         innerHTML: serializeInnerRoot(root),
         proposal: state.proposal,
+        ...(appliedSource ? { source: appliedSource } : {}),
         comments: [...state.comments],
         directEdits: [...state.directEdits],
       };
@@ -754,7 +879,9 @@ export function createArtifactReview(options = {}) {
       state.directEdits = [];
       state.proposal = null;
       state.preview = null;
+      state.request = null;
       state.status = typeof options.onApply === "function" ? "Update saved." : "Update applied to this page.";
+      refreshKeyboardSelection();
       emit("apply", payload);
     } catch (error) {
       state.error = `The preview changed, but the host could not save it: ${error instanceof Error ? error.message : String(error)}`;
@@ -769,7 +896,9 @@ export function createArtifactReview(options = {}) {
     state.preview?.rollback?.();
     state.proposal = null;
     state.preview = null;
+    state.request = null;
     state.status = "Agent proposal discarded. Your comments are still here.";
+    refreshKeyboardSelection();
     emit("discard");
     render();
   }
@@ -817,7 +946,7 @@ export function createArtifactReview(options = {}) {
       ${state.open ? `
         <aside class="panel" aria-label="Inline artifact review">
           <div class="head">
-            <div><h2>Review this HTML</h2><p class="sub">Click, comment, repeat. Send when ready.</p></div>
+            <div><h2>Review this artifact</h2><p class="sub">Click, comment, repeat. Send when ready.</p></div>
             <button class="close" data-action="close" aria-label="Close review panel">×</button>
           </div>
           <div class="body">
@@ -827,7 +956,7 @@ export function createArtifactReview(options = {}) {
               <label class="label" for="iar-comment">Comment</label>
               <textarea id="iar-comment" placeholder="What should the agent change?">${escapeHtml(state.draft)}</textarea>
               <div class="row" style="margin-top:8px">
-                <button data-action="edit" ${state.commentTarget === "artifact" || state.selected.length !== 1 || state.busy || state.proposal ? "disabled" : ""}>Edit inline</button>
+                ${allowInlineEdit ? `<button data-action="edit" ${state.commentTarget === "artifact" || state.selected.length !== 1 || state.busy || state.proposal ? "disabled" : ""}>Edit inline</button>` : ""}
                 <button class="primary" data-action="add-comment" ${state.busy || state.proposal ? "disabled" : ""}>Add comment</button>
               </div>
             </div>
@@ -913,7 +1042,7 @@ export function createArtifactReview(options = {}) {
       return {
         enabled: state.enabled,
         commentTarget: state.commentTarget,
-        selected: state.selected.map((element) => anchorFor(element, root)),
+        selected: state.selected.map((element) => anchorFor(element, root, currentSource())),
         comments: structuredClone(state.comments),
         directEdits: structuredClone(state.directEdits),
         proposal: state.proposal ? structuredClone(state.proposal) : null,
@@ -933,6 +1062,52 @@ export function createArtifactReview(options = {}) {
       emit("destroy");
     },
   };
+}
+
+/** Review rendered Markdown while preserving Markdown as the canonical source. */
+export function createMarkdownArtifactReview(options = {}) {
+  const {
+    markdown,
+    render,
+    onApply,
+    source: _source,
+    preview: _preview,
+    allowInlineEdit: _allowInlineEdit,
+    ...reviewOptions
+  } = options;
+  if (typeof markdown !== "string") throw new TypeError("createMarkdownArtifactReview needs a markdown string.");
+  if (typeof render !== "function") throw new TypeError("createMarkdownArtifactReview needs a render(markdown) function.");
+
+  let currentMarkdown = markdown;
+  const review = createArtifactReview({
+    ...reviewOptions,
+    source: () => ({ format: "markdown", content: currentMarkdown }),
+    allowInlineEdit: false,
+    preview: async ({ root, proposal }) => {
+      const handle = await previewSourceProposal(root, proposal, { format: "markdown", render });
+      return {
+        touched: handle.touched,
+        source: handle.source,
+        rollback() { handle.rollback(); },
+        commit() {
+          handle.commit();
+          currentMarkdown = handle.source.content;
+        },
+      };
+    },
+    ...(typeof onApply === "function" ? {
+      onApply: async (payload) => {
+        if (payload.source?.format !== "markdown") {
+          throw new Error("The Markdown preview did not return Markdown source.");
+        }
+        await onApply({ ...payload, markdown: payload.source.content });
+      },
+    } : {}),
+  });
+
+  return Object.assign(review, {
+    getMarkdown() { return currentMarkdown; },
+  });
 }
 
 export const protocol = PROTOCOL;
