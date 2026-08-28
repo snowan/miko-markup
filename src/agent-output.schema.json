@@ -1,0 +1,32 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/snowan/miko-markup/blob/main/src/agent-output.schema.json",
+  "title": "MikoMarkup structured agent output",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["summary", "patches"],
+  "properties": {
+    "summary": {
+      "type": "string"
+    },
+    "patches": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["selector", "operation", "value", "name", "commentId"],
+        "properties": {
+          "selector": { "type": "string" },
+          "operation": {
+            "type": "string",
+            "enum": ["setText", "setHTML", "setAttribute", "removeAttribute"]
+          },
+          "value": { "type": ["string", "null"] },
+          "name": { "type": ["string", "null"] },
+          "commentId": { "type": ["string", "null"] }
+        }
+      }
+    }
+  }
+}

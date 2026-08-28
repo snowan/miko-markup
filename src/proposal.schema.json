@@ -1,0 +1,67 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/snowan/miko-markup/blob/main/src/proposal.schema.json",
+  "title": "MikoMarkup artifact proposal",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["summary", "patches"],
+  "properties": {
+    "summary": {
+      "type": "string",
+      "minLength": 1
+    },
+    "patches": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "oneOf": [
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["selector", "operation", "value"],
+            "properties": {
+              "selector": { "type": "string", "minLength": 1 },
+              "operation": { "const": "setText" },
+              "value": { "type": "string" },
+              "commentId": { "type": "string" }
+            }
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["selector", "operation", "value"],
+            "properties": {
+              "selector": { "type": "string", "minLength": 1 },
+              "operation": { "const": "setHTML" },
+              "value": { "type": "string" },
+              "commentId": { "type": "string" }
+            }
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["selector", "operation", "name", "value"],
+            "properties": {
+              "selector": { "type": "string", "minLength": 1 },
+              "operation": { "const": "setAttribute" },
+              "name": { "type": "string", "minLength": 1 },
+              "value": { "type": "string" },
+              "commentId": { "type": "string" }
+            }
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["selector", "operation", "name"],
+            "properties": {
+              "selector": { "type": "string", "minLength": 1 },
+              "operation": { "const": "removeAttribute" },
+              "name": { "type": "string", "minLength": 1 },
+              "commentId": { "type": "string" }
+            }
+          }
+        ]
+      }
+    }
+  }
+}

@@ -1,0 +1,62 @@
+{
+  "name": "miko-markup",
+  "version": "0.1.0",
+  "description": "Inline HTML comments and agent-powered update previews for any artifact viewer.",
+  "license": "MIT",
+  "author": "snowan",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./src/index.d.ts",
+      "import": "./src/index.js",
+      "default": "./src/index.js"
+    },
+    "./node": {
+      "types": "./src/node.d.ts",
+      "import": "./src/node.js",
+      "default": "./src/node.js"
+    },
+    "./proposal.schema.json": "./src/proposal.schema.json",
+    "./agent-output.schema.json": "./src/agent-output.schema.json"
+  },
+  "files": [
+    "src",
+    "docs",
+    "CHANGELOG.md",
+    "CONTRIBUTING.md",
+    "LICENSE",
+    "README.md",
+    "SECURITY.md"
+  ],
+  "scripts": {
+    "check": "node --check src/index.js && node --check src/node.js && tsc -p tsconfig.json && node --test",
+    "demo": "node scripts/serve-demo.mjs",
+    "pack:check": "npm pack --dry-run",
+    "test": "node --test"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "keywords": [
+    "agent",
+    "annotation",
+    "artifact",
+    "claude-code",
+    "codex",
+    "html",
+    "inline-editing",
+    "review"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/snowan/miko-markup.git"
+  },
+  "bugs": {
+    "url": "https://github.com/snowan/miko-markup/issues"
+  },
+  "homepage": "https://github.com/snowan/miko-markup#readme",
+  "devDependencies": {
+    "happy-dom": "^20.11.12",
+    "typescript": "^7.0.2"
+  }
+}
